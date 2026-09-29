@@ -1,0 +1,7 @@
+{
+  "name": "konsertkollen-github",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "node scripts/build.mjs"},
+  "devDependencies": {"typescript": "5.9.3"}
+}
