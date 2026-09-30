@@ -4,6 +4,7 @@ if(eventsEl){
  const citiesEl=document.querySelector('#cities'),summary=document.querySelector('#city-summary'),status=document.querySelector('#status');
  const from=document.querySelector('#from'),to=document.querySelector('#to');
  let concerts=[],updated='',visibleCount=80;const selected=new Set();const more=document.querySelector('#more');
+ const selectedSources=new Set(),sourcesEl=document.querySelector('#sources'),sourceSummary=document.querySelector('#source-summary');
  const saved=new Map(),storageKey='konsertkollen-saved-v1',savedEl=document.querySelector('#saved-events'),feedback=document.querySelector('#saved-feedback');
  const key=c=>`${c.source}|${c.date}|${c.title}|${c.url}`;
  try{for(const c of JSON.parse(localStorage.getItem(storageKey)||'[]'))if(c?.title&&c?.date&&c?.url)saved.set(key(c),c)}catch{}
@@ -18,7 +19,9 @@ if(eventsEl){
   savedEl.innerHTML=items.map(c=>`<div class="saved-item"><span><strong>${safe(c.title)}</strong><small>${safe(c.date)}${c.time?' · '+safe(c.time):''} · ${safe(c.city)} · ${safe(c.venue)}</small></span><button type="button" data-remove="${safe(key(c))}">Ta bort</button></div>`).join('');
  }
  function render(){
-  const shown=concerts.filter(c=>(!selected.size||selected.has(c.city))&&(!from.value||c.date>=from.value)&&(!to.value||c.date<=to.value));
+  const shown=concerts.filter(c=>(!selected.size||selected.has(c.city))&&(!selectedSources.size||c.source.split(' · ').some(s=>selectedSources.has(s)))&&(!from.value||c.date>=from.value)&&(!to.value||c.date<=to.value));
+  sourceSummary.textContent=selectedSources.size?`${selectedSources.size} ${selectedSources.size===1?'arrangör vald':'arrangörer valda'}`:'Alla arrangörer';
+  document.querySelector('#all-sources').hidden=!selectedSources.size;
   summary.textContent=selected.size?`${selected.size} ${selected.size===1?'ort vald':'orter valda'}`:'Alla orter';
   document.querySelector('#all-cities').hidden=!selected.size;
   status.textContent=`${shown.length} träffar · Uppdaterat ${updated}`;
@@ -64,7 +67,8 @@ if(eventsEl){
  renderSaved();
  for(const input of [from,to])input.addEventListener('change',()=>{visibleCount=80;render()});
  more.addEventListener('click',()=>{visibleCount+=80;render()});
- document.querySelector('#clear').addEventListener('click',()=>{selected.clear();from.value='';to.value='';citiesEl.querySelectorAll('input').forEach(x=>x.checked=false);visibleCount=80;render()});
+ document.querySelector('#clear').addEventListener('click',()=>{selected.clear();selectedSources.clear();from.value='';to.value='';citiesEl.querySelectorAll('input').forEach(x=>x.checked=false);sourcesEl.querySelectorAll('input').forEach(x=>x.checked=false);visibleCount=80;render()});
+ document.querySelector('#all-sources').addEventListener('click',()=>{selectedSources.clear();sourcesEl.querySelectorAll('input').forEach(x=>x.checked=false);visibleCount=80;render()});
  document.querySelector('#all-cities').addEventListener('click',()=>{selected.clear();citiesEl.querySelectorAll('input').forEach(x=>x.checked=false);visibleCount=80;render()});
  try{
   const response=await fetch('./data/concerts.json');if(!response.ok)throw new Error('data');
@@ -72,6 +76,11 @@ if(eventsEl){
   updated=new Intl.DateTimeFormat('sv-SE',{dateStyle:'short',timeZone:'Europe/Stockholm'}).format(new Date(data.updated));
   document.querySelector('#total').textContent=concerts.length;
   const cities=[...new Set(concerts.map(c=>c.city))].sort((a,b)=>a.localeCompare(b,'sv'));
+  const sources=[...new Set(concerts.flatMap(c=>c.source.split(' · ')))].sort((a,b)=>a.localeCompare(b,'sv'));
+  for(const source of sources){
+   const row=document.createElement('label');row.className='city-option';const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.value=source;
+   checkbox.addEventListener('change',()=>{checkbox.checked?selectedSources.add(source):selectedSources.delete(source);visibleCount=80;render()});row.append(checkbox,document.createTextNode(source));sourcesEl.append(row);
+  }
   for(const [i,city] of cities.entries()){
    const row=document.createElement('label');row.className='city-option';const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.value=city;checkbox.id=`city-${i}`;
    checkbox.addEventListener('change',()=>{checkbox.checked?selected.add(city):selected.delete(city);visibleCount=80;render()});row.append(checkbox,document.createTextNode(city));citiesEl.append(row)

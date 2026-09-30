@@ -5,11 +5,27 @@ const summary = (v: unknown) => { const s = plain(v); return s.length > 190 ? s.
 async function get(url: string) { const r = await fetch(url, { next: { revalidate: 3600 }, signal: AbortSignal.timeout(9000) }); if (!r.ok) throw new Error('Unavailable'); return r.json(); }
 async function getTicketmaster(key: string, today: string, end: string) {
  const events: Record<string, any>[] = [];
- for (let page=0; page<5; page++) {
-  const params = new URLSearchParams({apikey:key,countryCode:'SE',segmentName:'Music',startDateTime:`${today}T00:00:00Z`,endDateTime:`${end}T23:59:59Z`,sort:'date,asc',size:'200',page:String(page)});
-  const result = await get(`https://app.ticketmaster.com/discovery/v2/events.json?${params}`);
-  events.push(...(result?._embedded?.events ?? []));
-  if (page+1 >= Math.min(result?.page?.totalPages ?? 1,5)) break;
+ async function request(params:URLSearchParams){
+  await new Promise(resolve=>setTimeout(resolve,550));
+  return get(`https://app.ticketmaster.com/discovery/v2/events.json?${params}`);
+ }
+ async function interval(from:string,to:string):Promise<void> {
+  const params = new URLSearchParams({apikey:key,countryCode:'SE',segmentName:'Music',startDateTime:`${from}T00:00:00Z`,endDateTime:`${to}T23:59:59Z`,sort:'date,asc',size:'200',page:'0'});
+  const first = await request(params);
+  if((first?.page?.totalElements??0)>1000 && from<to){
+   const middle=new Date(Math.floor((Date.parse(from)+Date.parse(to))/2/86400000)*86400000).toISOString().slice(0,10);
+   const next=new Date(Date.parse(middle)+86400000).toISOString().slice(0,10);
+   await interval(from,middle);await interval(next,to);return;
+  }
+  events.push(...(first?._embedded?.events??[]));
+  for(let page=1;page<Math.min(first?.page?.totalPages??1,5);page++){
+   params.set('page',String(page));
+   const result=await request(params);
+   events.push(...(result?._embedded?.events??[]));
+  }
+ }
+ for(let cursor=Date.parse(today);cursor<=Date.parse(end);cursor+=30*86400000){
+  await interval(new Date(cursor).toISOString().slice(0,10),new Date(Math.min(cursor+29*86400000,Date.parse(end))).toISOString().slice(0,10));
  }
  return events;
 }
@@ -156,7 +172,8 @@ async function getNalen(today:string,end:string):Promise<Concert[]> {
 export async function collectConcerts() {
  const now = new Date();
  const today = new Intl.DateTimeFormat('sv-SE', { timeZone:'Europe/Stockholm', year:'numeric', month:'2-digit', day:'2-digit' }).format(now);
- const end = new Date(now.getTime()+180*86400000).toISOString().slice(0,10);
+ const endDate=new Date(`${today}T12:00:00Z`);endDate.setUTCFullYear(endDate.getUTCFullYear()+2);
+ const end=endDate.toISOString().slice(0,10);
  const ticketmasterKey = process.env.TICKETMASTER_API_KEY;
  const results = await Promise.allSettled([get(`https://debaser.se/external/events?start=${today}&end=${end}&category=CONCERT`), get('https://www.berwaldhallen.se/api/feeds/calendar'), ticketmasterKey ? getTicketmaster(ticketmasterKey,today,end) : Promise.resolve(null), getLiveNation(),getWordPressEvents('https://kaliberlive.com',2),getWordPressEvents('https://www.katalin.com',4),getGavle(today,end),getMusikhuset(today,end),getKollektivet(today,end),getAXSViaStockholmLive(today,end),getEncore(today,end),getNalen(today,end)]);
  const concerts: Concert[] = [];
